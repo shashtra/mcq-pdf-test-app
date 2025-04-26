@@ -1,0 +1,72 @@
+from flask import Flask, request, jsonify, send_from_directory
+import fitz  # PyMuPDF
+import re
+import os
+
+app = Flask(__name__)
+
+# In-memory storage
+mcq_data = []
+
+# Helper function to parse MCQs
+def parse_mcqs(text):
+    questions = []
+    pattern = r'(\d+\.\s.*?)(?=\n\d+\.|$)'
+    matches = re.findall(pattern, text, re.DOTALL)
+    for match in matches:
+        lines = match.strip().split('\n')
+        question_line = lines[0]
+        options = []
+        answer = None
+        for line in lines[1:]:
+            if line.startswith(('A)', 'B)', 'C)', 'D)')):
+                options.append(line[2:].strip())
+            elif 'Answer:' in line:
+                answer_letter = line.split('Answer:')[-1].strip()
+                if answer_letter in ['A', 'B', 'C', 'D']:
+                    answer = options[ord(answer_letter) - ord('A')]
+        questions.append({
+            'question': question_line,
+            'options': options,
+            'answer': answer
+        })
+    return questions
+
+@app.route('/')
+def serve_frontend():
+    return send_from_directory('', 'index.html')
+
+@app.route('/upload', methods=['POST'])
+def upload_pdf():
+    global mcq_data
+    file = request.files['file']
+    if not file:
+        return 'No file uploaded.', 400
+    
+    # Read PDF
+    doc = fitz.open(stream=file.read(), filetype="pdf")
+    text = ""
+    for page in doc:
+        text += page.get_text()
+
+    # Parse MCQs
+    mcq_data = parse_mcqs(text)
+
+    return jsonify({"message": "PDF processed", "total_questions": len(mcq_data)})
+
+@app.route('/get_test', methods=['GET'])
+def get_test():
+    return jsonify(mcq_data)
+
+@app.route('/submit_test', methods=['POST'])
+def submit_test():
+    user_answers = request.json.get('answers', [])
+    correct = 0
+    for idx, ans in enumerate(user_answers):
+        if idx < len(mcq_data) and ans == mcq_data[idx]['answer']:
+            correct += 1
+    return jsonify({"score": correct, "total": len(mcq_data)})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=10000)
+
