@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MCQ Test Series Pro</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .progress {
+      height: 25px;
+    }
+    .timer {
+      font-size: 1.5rem;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body class="bg-light">
+
+<div class="container py-5">
+  <h1 class="text-center mb-4">📄 MCQ Test Series (Pro)</h1>
+
+  <div class="card p-4 mb-4 shadow-sm">
+    <h4>Upload Your MCQ PDF</h4>
+    <input class="form-control mb-3" type="file" id="pdfFile">
+    <button class="btn btn-primary w-100" onclick="uploadPDF()">Upload and Start Test</button>
+  </div>
+
+  <div id="testArea" class="card p-4 shadow-sm" style="display:none;">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div class="timer" id="timer">⏳ 05:00</div>
+      <div class="w-75">
+        <div class="progress">
+          <div id="progressBar" class="progress-bar" role="progressbar" style="width: 0%;">0%</div>
+        </div>
+      </div>
+    </div>
+
+    <h4 id="questionText" class="mb-3"></h4>
+    <div id="optionsArea" class="mb-3"></div>
+    <button class="btn btn-success w-100" onclick="nextQuestion()">Next ➡️</button>
+  </div>
+
+  <div id="resultArea" class="text-center p-4" style="display:none;">
+    <h2 id="resultText" class="text-success mb-3"></h2>
+    <div id="summaryArea" class="text-start"></div>
+    <button class="btn btn-secondary mt-4" onclick="window.location.reload()">Restart Test</button>
+  </div>
+</div>
+
+<script>
+  let questions = [];
+  let current = 0;
+  let answers = [];
+  let timerInterval;
+  let totalTime = 300; // 5 minutes in seconds
+
+  function uploadPDF() {
+    const fileInput = document.getElementById('pdfFile');
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    fetch('/upload', {
+      method: 'POST',
+      body: formData
+    })
+    .then(res => res.json())
+    .then(data => {
+      alert(`✅ PDF processed! Total Questions: ${data.total_questions}`);
+      loadTest();
+    });
+  }
+
+  function loadTest() {
+    fetch('/get_test')
+    .then(res => res.json())
+    .then(data => {
+      questions = data;
+      document.querySelector('.card').style.display = 'none';
+      document.getElementById('testArea').style.display = 'block';
+      showQuestion();
+      startTimer();
+    });
+  }
+
+  function showQuestion() {
+    if (current >= questions.length) {
+      submitTest();
+      return;
+    }
+    document.getElementById('questionText').innerText = questions[current].question;
+    let optionsHtml = '';
+    questions[current].options.forEach(opt => {
+      optionsHtml += `
+        <div class="form-check">
+          <input class="form-check-input" type="radio" name="option" value="${opt}" id="${opt}">
+          <label class="form-check-label" for="${opt}">
+            ${opt}
+          </label>
+        </div>`;
+    });
+    document.getElementById('optionsArea').innerHTML = optionsHtml;
+    updateProgress();
+  }
+
+  function nextQuestion() {
+    const selected = document.querySelector('input[name="option"]:checked');
+    if (selected) {
+      answers.push(selected.value);
+      current++;
+      showQuestion();
+    } else {
+      alert('⚠️ Please select an option!');
+    }
+  }
+
+  function submitTest() {
+    clearInterval(timerInterval);
+
+    fetch('/submit_test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({answers: answers})
+    })
+    .then(res => res.json())
+    .then(result => {
+      document.getElementById('testArea').style.display = 'none';
+      document.getElementById('resultArea').style.display = 'block';
+      document.getElementById('resultText').innerText = `🎯 You scored ${result.score}/${result.total}!`;
+      showSummary();
+    });
+  }
+
+  function updateProgress() {
+    const percent = (current / questions.length) * 100;
+    const progressBar = document.getElementById('progressBar');
+    progressBar.style.width = `${percent}%`;
+    progressBar.innerText = `${Math.round(percent)}%`;
+  }
+
+  function startTimer() {
+    timerInterval = setInterval(() => {
+      if (totalTime <= 0) {
+        clearInterval(timerInterval);
+        alert('⏰ Time up! Submitting your test.');
+        submitTest();
+        return;
+      }
+      totalTime--;
+      const minutes = Math.floor(totalTime / 60);
+      const seconds = totalTime % 60;
+      document.getElementById('timer').innerText = `⏳ ${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+    }, 1000);
+  }
+
+  function showSummary() {
+    let summaryHtml = '<h5>Summary:</h5><ul class="list-group">';
+    questions.forEach((q, idx) => {
+      const userAns = answers[idx] || 'No answer';
+      summaryHtml += `
+        <li class="list-group-item">
+          <strong>Q${idx+1}:</strong> ${q.question}<br>
+          <span class="${userAns === q.answer ? 'text-success' : 'text-danger'}">
+            Your answer: ${userAns} | Correct: ${q.answer}
+          </span>
+        </li>`;
+    });
+    summaryHtml += '</ul>';
+    document.getElementById('summaryArea').innerHTML = summaryHtml;
+  }
+</script>
+
+</body>
+</html>
